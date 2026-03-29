@@ -2,7 +2,7 @@
 
 > **Wersja:** 1.2  
 > **Data:** 2026-03-29  
-> **Status:** In Progress — Faza 2 ✅  
+> **Status:** In Progress — Faza 3 ✅  
 > **Powiązane dokumenty:** `010-mvp.md`, `020-prd.md`, `030-tech-stack.md`, `050-protocol-reference.md`
 
 ---
@@ -20,7 +20,7 @@ Faza 0: Szkielet projektu ✅ DONE (2026-03-29)
     ├── Faza 2: Frontend UI + Store (z mockami) ✅ DONE (2026-03-29) ← dashboard gotowy!
     │                    │
     │                    ▼
-    ├── Faza 3: ScannerService (prawdziwy protokół) ← UI gotowe do testów!
+    ├── Faza 3: ScannerService (prawdziwy protokół) ✅ DONE (2026-03-29)
     │                    │
     ├── Faza 4: AdapterService (prawdziwy protokół) ← UI gotowe do testów!
     │                    │
@@ -256,7 +256,7 @@ const connectScanner = async (config: {ip: string, port: number}) => {
 
 ---
 
-## Faza 3 — ScannerService (prawdziwy protokół EtherNet/IP)
+## Faza 3 — ScannerService (prawdziwy protokół EtherNet/IP) ✅ DONE (2026-03-29)
 
 **Cel:** PC inicjuje połączenie EtherNet/IP z robotem FANUC R-30iB — zastępuje mockowane dane prawdziwym protokołem w trybie Scanner.
 
@@ -659,7 +659,7 @@ Faza 0 (szkielet)
 | **M0** — Środowisko gotowe ✅ | `bun run dev` uruchamia Vite + Hono bez błędów |
 | **M1** — Mock Backend działa ✅ | WebSocket broadcast z fake danymi, API endpoints odpowiadają |
 | **M2** — UI funkcjonalne ✅ | Dashboard z dwoma panelami, toggle bitów, animacje, responsive design |
-| **M3** — Scanner Protocol | `ScannerService.connect()` kończy Forward Open bez błędów CIP, widoczne w UI |
+| **M3** — Scanner Protocol ✅ | `ScannerService.connect()` kończy Forward Open bez błędów CIP, widoczne w UI |
 | **M4** — Adapter Protocol | `AdapterService.start()` odbiera Forward Open od FANUC, widoczne w UI |
 | **M5** — Integracja finalna | Wszystkie mocki zastąpione, `bun start` → production build |
 | **M6** — Testy akceptacyjne | Wszystkie 10 testów z Fazy 6 zaliczone na fizycznym FANUC R-30iB ✅ |
