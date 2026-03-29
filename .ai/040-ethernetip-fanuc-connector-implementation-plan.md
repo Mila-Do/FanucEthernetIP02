@@ -1,8 +1,8 @@
 # Plan Implementacji: EthernetIP Fanuc Connector
 
-> **Wersja:** 1.1  
+> **Wersja:** 1.2  
 > **Data:** 2026-03-29  
-> **Status:** In Progress — Faza 0 ✅  
+> **Status:** In Progress — Faza 1 ✅  
 > **Powiązane dokumenty:** `010-mvp.md`, `020-prd.md`, `030-tech-stack.md`, `050-protocol-reference.md`
 
 ---
@@ -14,7 +14,7 @@
 ```
 Faza 0: Szkielet projektu ✅ DONE (2026-03-29)
     │
-    ├── Faza 1: Mock Backend + WebSocket (szybkie prototypowanie)
+    ├── Faza 1: Mock Backend + WebSocket ✅ DONE (2026-03-29)
     │                    │
     │                    ▼
     ├── Faza 2: Frontend UI + Store (z mockami) ← dashboard gotowy!
@@ -65,13 +65,13 @@ type WsPayload = {
 
 ---
 
-## Faza 1 — Mock Backend + WebSocket broadcast
+## Faza 1 — Mock Backend + WebSocket broadcast ✅ DONE (2026-03-29)
 
 **Cel:** Działający backend z mockowanymi danymi EtherNet/IP — pozwala natychmiast przetestować UI i przepływ danych.
 
-### Kroki
+### Kroki ✅
 
-**1.1 AppState z mockowanymi danymi**
+**1.1 AppState z mockowanymi danymi** ✅
 ```typescript
 // packages/server/src/state.ts
 const AppState = {
@@ -86,7 +86,7 @@ const AppState = {
 }
 ```
 
-**1.2 Mock API endpoints (Hono)**
+**1.2 Mock API endpoints (Hono)** ✅
 ```typescript
 app.post('/api/scanner/connect', async (c) => {
   const config = c.req.valid('json')
@@ -107,7 +107,7 @@ app.post('/api/scanner/connect', async (c) => {
 })
 ```
 
-**1.3 Mock data generator**
+**1.3 Mock data generator** ✅
 ```typescript
 // Symulowane dane wejściowe (co 100ms inne wartości)
 setInterval(() => {
@@ -120,14 +120,14 @@ setInterval(() => {
 }, 100)
 ```
 
-**1.4 WebSocket broadcast**
+**1.4 WebSocket broadcast** ✅
 - Bun WebSocket upgrade na `/ws`
 - Broadcast co 100ms: 2 payloady (scanner + adapter) z aktualnym AppState
 - Format identyczny jak docelowy: `WsPayload`
 
-**1.5 Testowanie różnych scenariuszy**
-- `192.168.1.999` → timeout error
-- `192.168.1.998` → connection refused  
+**1.5 Testowanie różnych scenariuszy** ✅
+- `192.0.2.99` → timeout error (po 5s) — IANA TEST-NET-1
+- `192.0.2.98` → connection refused natychmiast — IANA TEST-NET-1
 - Inne IP → sukces z losowymi danymi I/O
 
 ---
@@ -657,7 +657,7 @@ Faza 0 (szkielet)
 | Milestone | Zakończone gdy... |
 |-----------|-------------------|
 | **M0** — Środowisko gotowe ✅ | `bun run dev` uruchamia Vite + Hono bez błędów |
-| **M1** — Mock Backend działa | WebSocket broadcast z fake danymi, API endpoints odpowiadają |
+| **M1** — Mock Backend działa ✅ | WebSocket broadcast z fake danymi, API endpoints odpowiadają |
 | **M2** — UI funkcjonalne | Dashboard z dwoma panelami, toggle bitów, animacje, responsive design |
 | **M3** — Scanner Protocol | `ScannerService.connect()` kończy Forward Open bez błędów CIP, widoczne w UI |
 | **M4** — Adapter Protocol | `AdapterService.start()` odbiera Forward Open od FANUC, widoczne w UI |
@@ -684,7 +684,7 @@ Faza 0 (szkielet)
 | Faza | Co | Czas szacowany | Kluczowe rezultaty |
 |---|---|---|---|
 | **0** ✅ | Szkielet monorepo, typy, tooling | 1 dzień | `bun run dev` działa |
-| **1** | Mock Backend + WebSocket broadcast | 1 dzień | Fake dane EtherNet/IP |
+| **1** ✅ | Mock Backend + WebSocket broadcast | 1 dzień | Fake dane EtherNet/IP |
 | **2** | Frontend UI: panele, tabele bitów | 2 dni | **Dashboard gotowy!** |
 | **3** | `ScannerService` — Forward Open | 3 dni | Prawdziwy protokół z UI feedback |
 | **4** | `AdapterService` — TCP server | 2 dni | Oba tryby działają |

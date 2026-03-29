@@ -13,11 +13,28 @@ scannerRoutes.post('/connect', zValidator('json', ConnectScannerSchema), async (
   }
 
   appState.scanner.config = config;
-  appState.scanner.status = 'connecting';
   appState.scanner.errorMessage = null;
 
-  // ScannerService will be wired here in Phase 3
-  // For now: placeholder that will be replaced with real EtherNet/IP connection
+  // Mock: special IPs simulate error conditions
+  // 192.0.2.x = IANA TEST-NET-1, reserved for documentation/testing
+  if (config.ip === '192.0.2.99') {
+    appState.scanner.status = 'connecting';
+    setTimeout(() => {
+      appState.scanner.status = 'error';
+      appState.scanner.errorMessage = 'Connection timed out';
+    }, 5000);
+  } else if (config.ip === '192.0.2.98') {
+    appState.scanner.status = 'error';
+    appState.scanner.errorMessage = `Connection refused: ${config.ip}:${config.port}`;
+  } else {
+    // Mock: normal connection — simulate 1.5s TCP handshake + Forward Open
+    appState.scanner.status = 'connecting';
+    setTimeout(() => {
+      if (appState.scanner.status === 'connecting') {
+        appState.scanner.status = 'connected';
+      }
+    }, 1500);
+  }
 
   return c.json({ status: appState.scanner.status });
 });

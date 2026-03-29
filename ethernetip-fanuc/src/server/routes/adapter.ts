@@ -13,10 +13,15 @@ adapterRoutes.post('/start', zValidator('json', StartAdapterSchema), async (c) =
   }
 
   appState.adapter.config = config;
-  appState.adapter.status = 'connecting';
   appState.adapter.errorMessage = null;
 
-  // AdapterService will be wired here in Phase 4
+  // Mock: simulate waiting for FANUC Scanner to connect (1.5s)
+  appState.adapter.status = 'connecting';
+  setTimeout(() => {
+    if (appState.adapter.status === 'connecting') {
+      appState.adapter.status = 'connected';
+    }
+  }, 1500);
 
   return c.json({ status: appState.adapter.status });
 });

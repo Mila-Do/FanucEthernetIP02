@@ -97,5 +97,16 @@ const server = Bun.serve({
 // Start 100ms broadcast loop
 startBroadcast();
 
+// Mock data generator — Phase 1 only, replaced in Phase 3/4 by real services
+// Simulates incoming I/O data from FANUC robot when connected
+setInterval(() => {
+  if (appState.scanner.status === 'connected') {
+    appState.scanner.inputWord = Math.floor(Math.random() * 65536);
+  }
+  if (appState.adapter.status === 'connected') {
+    appState.adapter.inputWord = Math.floor(Math.random() * 65536);
+  }
+}, 100);
+
 console.log(`EtherNet/IP FANUC Connector running on http://0.0.0.0:${server.port}`);
 console.log(`WebSocket: ws://0.0.0.0:${server.port}/ws`);
