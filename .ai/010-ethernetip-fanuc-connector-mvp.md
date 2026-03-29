@@ -6,6 +6,8 @@
 
 Brak prostego, gotowego interfejsu webowego który pozwala technikowi / inżynierowi nawiązać połączenie z robotem Fanuc przez EthernetIP z komputera lub tabletu — bez instalacji oprogramowania, bez konfiguracji PLC, w dwóch trybach: **Scanner** (PC jako master) lub **Adapter** (PC jako slave, robot jako master).
 
+**Ograniczenie trybu:** Oba tryby nigdy nie działają jednocześnie — użytkownik wybiera jeden tryb przełącznikiem. Przed zmianą trybu połączenie jest rozłączane a porty zwalniane.
+
 ---
 
 ## 2. Target Users
@@ -17,8 +19,7 @@ Ui ma też służyć ko podstawa interfejsu z końcowym użytkownikiem aplikacji
 
 ## 3. Core Value Proposition
 
-Utworzenie i przetestowanie połączenia na fanuc oraz webApp (ustawienei adresów, slotow, konfiguracja robota) - wykonana tylko raz. Możliwość konfiguracji scanner i/lub adapter na raz. 
-Następnie Jeden URL w przeglądarce → widzisz dane I/O. Zero instalacji, działa na każdym urządzeniu z przeglądarką w tej samej sieci co robot.
+Utworzenie i przetestowanie połączenia na fanuc oraz webApp (ustawienie adresów, slotów, konfiguracja robota) — wykonane tylko raz. Jeden URL w przeglądarce → widzisz dane I/O. Przełącznik trybu (Scanner / Adapter) pozwala testować oba scenariusze bez restartu aplikacji. Zero instalacji, działa na każdym urządzeniu z przeglądarką w tej samej sieci co robot.
 
 ---
 
@@ -26,11 +27,11 @@ Następnie Jeden URL w przeglądarce → widzisz dane I/O. Zero instalacji, dzia
 
 | # | Feature | Opis |
 |---|---------|------|
-| 1 | **Wybór trybu** | Dwa przyciski na starcie: `Scanner` / `Adapter` |
-| 2 | **Formularz konfiguracji** | IP robota, port (domyślnie 44818), rozmiar danych wejściowych/wyjściowych  |
-| 3 | **Connect / Disconnect** | Jeden przycisk, jasny wskaźnik stanu (Connected / Disconnected / Error) |
-| 4 | **Podgląd danych I/O** | Tabela bajtów (Input  / Output ) odświeżana co 100ms |
-| 5 | **Edycja PC Output / Fanuc input ** | Kliknięcie bitu w tabeli  → zmiana wartości → wyślij do robota |
+| 1 | **Wybór trybu** | Przełącznik (toggle) z dwoma pozycjami: `SCANNER` / `ADAPTER` — nigdy jednocześnie |
+| 2 | **Formularz konfiguracji** | IP robota, port (domyślnie 44818) — wspólne dla obu trybów |
+| 3 | **Connect / Disconnect** | Przycisk POŁĄCZ uruchamia wybrany tryb; ROZŁĄCZ zawsze zwalnia porty TCP i UDP |
+| 4 | **Podgląd danych I/O** | Tabela bitów (Input / Output) odświeżana co 100ms — wspólna dla obu trybów |
+| 5 | **Edycja PC Output / Fanuc input** | Kliknięcie bitu w tabeli Output → toggleuje wartość → wysyła do robota |
 
 ---
 
@@ -40,35 +41,37 @@ Następnie Jeden URL w przeglądarce → widzisz dane I/O. Zero instalacji, dzia
 Otwórz przeglądarkę → http://[adres-serwera]:3000
          │
          ▼
-┌─────────────────────────┐
-│  Wybierz tryb:          │
-│  [ SCANNER ] i/ lub [ADAPTER] │
-└─────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│  Wybierz tryb:  [ SCANNER ●──────○ ADAPTER ]        │
+│                  (przełącznik — tylko jeden aktywny) │
+└─────────────────────────────────────────────────────┘
          │
          ▼
-┌─────────────────────────────────────────┐
-│ Konfiguracja połączenia  po obu stronach│
-│  Robot IP:    [192.168.1.10      ]      │
-│  Port:        [44818             ]      │
-│  Input size:  [32  ] bajtów             │
-│  Output size: [32  ] bajtów             │
-│                                         │
-│           [ POŁĄCZ ]                    │
-└─────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│  Tryb: SCANNER                                      │
+│  Robot IP:    [192.168.1.10      ]                  │
+│  Port:        [44818             ]                  │
+│                                                     │
+│           [ POŁĄCZ ]                                │
+└─────────────────────────────────────────────────────┘
          │
          ▼
-┌─────────────────────────────────────────┐
-│  ● POŁĄCZONY  [ROZŁĄCZ]                 │
-│                                         │
-│  INPUT  (z robota)                      │
-│  Byte 0: 0x00  Byte 1: 0xFF  ...        │
-│                                         │
-│  OUTPUT (do robota) ← edytowalne        │
-│  Byte 0: [0x00] Byte 1: [0x01] ...      │
-└─────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│  ● POŁĄCZONY  [ ROZŁĄCZ ]  ← zwalnia porty TCP/UDP  │
+│                                                     │
+│  INPUT  (z robota do PC)                            │
+│  B15 B14 … B1 B0                                    │
+│   0   0  …  1  1                                    │
+│                                                     │
+│  OUTPUT (z PC do robota) ← edytowalne               │
+│  B15 B14 … B1 B0                                    │
+│   0   0  … [0] [1] ← toggle bitu                   │
+└─────────────────────────────────────────────────────┘
 ```
 
-**Tryb Adapter:** PC nasłuchuje, robot Scanner się łączy 
+**Zmiana trybu w trakcie połączenia:** Próba przełączenia trybu gdy status = `connected` → automatyczny disconnect (Forward Close + zamknięcie portów), następnie zmiana trybu.
+
+**Tryb Adapter:** PC nasłuchuje, robot Scanner się łączy.
 
 ---
 
@@ -78,10 +81,11 @@ Otwórz przeglądarkę → http://[adres-serwera]:3000
 
 | Dane | Gdzie | Typ |
 |------|-------|-----|
-| Parametry połączenia | Stan React (frontend) | `{ ip, port, inputSize, outputSize, mode }` |
+| Aktywny tryb | Serwer (in-memory) | `"scanner" \| "adapter"` |
+| Parametry połączenia | Stan React (frontend) | `{ ip, port, mode }` |
 | Stan połączenia | Serwer (in-memory) | `"disconnected" \| "connecting" \| "connected" \| "error"` |
-| Bufor Input Assembly | Serwer (in-memory) | `Buffer` (max 512 bajtów) |
-| Bufor Output Assembly | Serwer (in-memory) | `Buffer` (max 512 bajtów) |
+| Bufor Input Assembly | Serwer (in-memory) | `number` (UINT16, 0–65535) |
+| Bufor Output Assembly | Serwer (in-memory) | `number` (UINT16, 0–65535) |
 
 
 

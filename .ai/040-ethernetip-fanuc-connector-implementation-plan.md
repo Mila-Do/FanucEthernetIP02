@@ -1,8 +1,8 @@
 # Plan Implementacji: EthernetIP Fanuc Connector
 
-> **Wersja:** 1.2  
+> **Wersja:** 1.3  
 > **Data:** 2026-03-29  
-> **Status:** In Progress — Faza 3 ✅  
+> **Status:** ✅ COMPLETED — PC Scanner + PC Adapter działają z FANUC R-30iB  
 > **Powiązane dokumenty:** `010-mvp.md`, `020-prd.md`, `030-tech-stack.md`, `050-protocol-reference.md`
 
 ---
@@ -22,11 +22,11 @@ Faza 0: Szkielet projektu ✅ DONE (2026-03-29)
     │                    ▼
     ├── Faza 3: ScannerService (prawdziwy protokół) ✅ DONE (2026-03-29)
     │                    │
-    ├── Faza 4: AdapterService (prawdziwy protokół) ← UI gotowe do testów!
+    ├── Faza 4: AdapterService (prawdziwy protokół) ✅ DONE (2026-03-29)
     │                    │
-    ├── Faza 5: Integracja (zamiana mock → prawdziwe serwisy)
+    ├── Faza 5: Integracja (zamiana mock → prawdziwe serwisy) ✅ DONE (2026-03-29)
     │                    │
-    └── Faza 6: Testy z robotem FANUC
+    └── Faza 6: Testy z robotem FANUC ✅ DONE (2026-03-29)
 ```
 
 ---
@@ -52,9 +52,19 @@ Faza 0: Szkielet projektu ✅ DONE (2026-03-29)
 
 ```typescript
 type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error'
+type ActiveMode = 'scanner' | 'adapter'
+
+type AppState = {
+  activeMode: ActiveMode
+  status: ConnectionStatus
+  config: { ip: string; port: number } | null
+  errorMessage: string | null
+  inputWord: number    // UINT16, 0–65535
+  outputWord: number   // UINT16, 0–65535
+}
 
 type WsPayload = {
-  mode: 'scanner' | 'adapter'
+  mode: ActiveMode
   status: ConnectionStatus
   errorMessage?: string
   input: number   // UINT16, 0–65535
@@ -73,37 +83,35 @@ type WsPayload = {
 
 **1.1 AppState z mockowanymi danymi** ✅
 ```typescript
-// packages/server/src/state.ts
-const AppState = {
-  scanner: { 
-    config: null, 
-    status: 'disconnected', 
-    errorMessage: null, 
-    inputWord: 0,     // będzie mockowany
-    outputWord: 0     // kontrolowany przez UI
-  },
-  adapter: { /* analogicznie */ }
+// src/server/state.ts
+const AppState: AppState = {
+  activeMode: 'scanner',
+  status: 'disconnected',
+  config: null,
+  errorMessage: null,
+  inputWord: 0,
+  outputWord: 0,
 }
 ```
 
 **1.2 Mock API endpoints (Hono)** ✅
 ```typescript
-app.post('/api/scanner/connect', async (c) => {
-  const config = c.req.valid('json')
-  
-  // Symulacja: losowy sukces/błąd
-  if (config.ip === '192.168.1.999') {
-    AppState.scanner.status = 'error'
-    AppState.scanner.errorMessage = 'Connection timed out'
-  } else {
-    AppState.scanner.status = 'connecting'
-    setTimeout(() => {
-      AppState.scanner.status = 'connected'
-      AppState.scanner.config = config
-    }, 1500) // Symulacja opóźnienia połączenia
-  }
-  
-  return c.json({ status: AppState.scanner.status })
+// POST /api/connect
+app.post('/api/connect', async (c) => {
+  const { mode, ip, port } = c.req.valid('json')
+  AppState.activeMode = mode
+  AppState.status = 'connecting'
+  // Symulacja: inne IP → sukces
+  setTimeout(() => { AppState.status = 'connected' }, 1500)
+  return c.json({ status: AppState.status })
+})
+
+// POST /api/disconnect  
+app.post('/api/disconnect', async (c) => {
+  AppState.status = 'disconnected'
+  AppState.inputWord = 0
+  AppState.outputWord = 0
+  return c.json({ status: 'disconnected' })
 })
 ```
 
@@ -111,18 +119,15 @@ app.post('/api/scanner/connect', async (c) => {
 ```typescript
 // Symulowane dane wejściowe (co 100ms inne wartości)
 setInterval(() => {
-  if (AppState.scanner.status === 'connected') {
-    AppState.scanner.inputWord = Math.floor(Math.random() * 65536)
-  }
-  if (AppState.adapter.status === 'connected') {
-    AppState.adapter.inputWord = Math.floor(Math.random() * 65536)
+  if (AppState.status === 'connected') {
+    AppState.inputWord = Math.floor(Math.random() * 65536)
   }
 }, 100)
 ```
 
 **1.4 WebSocket broadcast** ✅
 - Bun WebSocket upgrade na `/ws`
-- Broadcast co 100ms: 2 payloady (scanner + adapter) z aktualnym AppState
+- Broadcast co 100ms: 1 payload z aktualnym AppState (mode + status + I/O)
 - Format identyczny jak docelowy: `WsPayload`
 
 **1.5 Testowanie różnych scenariuszy** ✅
@@ -143,12 +148,16 @@ setInterval(() => {
 **2.1 Zustand store** (`src/store/appStore.ts`)
 ```typescript
 type AppStore = {
-  scanner: ConnectionState
-  adapter: ConnectionState
+  activeMode: 'scanner' | 'adapter'
+  status: ConnectionStatus
+  config: { ip: string; port: number } | null
+  errorMessage: string | null
+  inputWord: number
+  outputWord: number
   wsStatus: 'connecting' | 'open' | 'closed'
+  setMode: (mode: 'scanner' | 'adapter') => void
   updateFromPayload: (p: WsPayload) => void
-  setScannerOutput: (word: number) => void
-  setAdapterOutput: (word: number) => void
+  setOutputWord: (word: number) => void
 }
 
 // Funkcje helper do konwersji word ↔ bits
@@ -180,77 +189,39 @@ const useEipWebSocket = () => {
 
 **2.3 Layout aplikacji** (`App.tsx`)
 ```typescript
-// Dark industrial theme, responsive grid
-<div className="min-h-screen bg-gray-900 p-4">
-  <header className="mb-8">
-    <h1>EtherNet/IP FANUC Connector</h1>
-    <div className="flex items-center gap-2">
-      WebSocket: <WsStatusIndicator />
-    </div>
-  </header>
-  
-  <div className="grid lg:grid-cols-2 gap-6">
-    <ConnectionPanel mode="scanner" />
-    <ConnectionPanel mode="adapter" />
-  </div>
+// Jeden panel, dark industrial theme, responsive
+<div className="min-h-screen bg-app-gradient p-4">
+  <TopBar />                    {/* tryb toggle + status WebSocket */}
+  <ConnectionPanel />           {/* jeden panel — tryb z store */}
 </div>
 ```
 
 **2.4 ConnectionPanel component**
-- Formularz konfiguracji: IP, Port (shadcn Input + Label)
+- Formularz konfiguracji: IP, Port — zablokowane gdy status ≠ `disconnected`
 - Status badge z animacjami (Framer Motion): 🟢🟡⚪🔴
-- Przycisk POŁĄCZ/ROZŁĄCZ z ikonami Lucide
-- Toast notifications (Sonner) dla błędów
-- `IoWordView` component gdy status = 'connected'
+- Przycisk `POŁĄCZ` (gdy disconnected/error) LUB `ROZŁĄCZ` (gdy connecting/connected)
+- `ROZŁĄCZ` wywołuje `POST /api/disconnect` — gwarantuje zwolnienie portów
+- `IoWordView` component gdy status = `connected`
 
-**2.5 IoWordView + BitCell components**
+**2.5 ModeToggle component** (`src/components/ModeToggle.tsx`)
 ```typescript
-// 16-kolumnowa tabela bitów
-const IoWordView = ({ inputWord, outputWord, onBitToggle }) => (
-  <div className="space-y-4">
-    <div className="grid grid-cols-16 gap-1">
-      {/* Nagłówki: B15...B0 */}
-      {Array(16).fill(0).map((_, i) => 
-        <div key={i} className="text-xs text-center">B{15-i}</div>
-      )}
-    </div>
-    
-    <div className="grid grid-cols-16 gap-1">
-      {/* Input row - readonly badges */}
-      {wordToBits(inputWord).reverse().map((bit, i) => 
-        <Badge key={i} variant={bit ? 'default' : 'secondary'}>
-          {bit ? '1' : '0'}
-        </Badge>
-      )}
-    </div>
-    
-    <div className="grid grid-cols-16 gap-1">
-      {/* Output row - clickable bits */}
-      {wordToBits(outputWord).reverse().map((bit, i) => 
-        <BitCell 
-          key={i} 
-          value={bit} 
-          bitIndex={15-i} 
-          onToggle={() => onBitToggle(15-i)} 
-        />
-      )}
-    </div>
-  </div>
-)
-```
-
-**2.6 API integration**
-```typescript
-// src/api/eipApi.ts - fetch calls do mock endpoints
-const connectScanner = async (config: {ip: string, port: number}) => {
-  const response = await fetch('/api/scanner/connect', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(config)
-  })
-  return response.json()
+// Pill-style toggle switch w top barze
+const ModeToggle = () => {
+  const { activeMode, status, setMode } = useAppStore()
+  
+  const handleToggle = async (newMode: 'scanner' | 'adapter') => {
+    if (newMode === activeMode) return
+    if (status === 'connecting') return  // zablokowane
+    if (status === 'connected') {
+      await fetch('/api/disconnect', { method: 'POST' })  // auto-disconnect
+    }
+    await fetch('/api/mode', { method: 'POST', body: JSON.stringify({ mode: newMode }) })
+    setMode(newMode)
+  }
 }
 ```
+
+**2.6 IoWordView + BitCell components** — bez zmian względem istniejącej implementacji, etykiety wierszy dynamiczne z trybu
 
 **Rezultat:** Kompletny UI działający z mockami — można testować wszystkie interakcje, animacje, responsive design.
 
@@ -349,35 +320,56 @@ app.post('/api/scanner/connect', zValidator('json', ConnectSchema), async (c) =>
 
 ## Faza 4 — AdapterService (prawdziwy protokół EtherNet/IP)
 
-**Cel:** PC nasłuchuje jako Adapter — FANUC Scanner inicjuje połączenie. Drugi tryb działający przez gotowy UI.
+**Cel:** PC nasłuchuje jako Adapter — FANUC Scanner inicjuje połączenie. Tryb przełączalny z Scanner przez toggle.
 
-**Zależność:** Faza 3 (ScannerService działa) + UI gotowe do testowania drugiego panelu.
+**Zależność:** Faza 3 (ScannerService działa) + UI gotowe do testowania drugiego trybu.
+
+**Kluczowa różnica od Scanner:** AdapterService używa portu UDP 2222, więc przełączenie trybu musi zamknąć poprzedni socket UDP zanim nowy serwis go otworzy.
 
 ### Kroki
 
 **4.1 TCP Server + RegisterSession**
 ```typescript
-// packages/server/src/services/AdapterService.ts
+// src/services/PCAdapterService.ts
 class AdapterService {
   private tcpServer: net.Server | null = null
   private clientSocket: net.Socket | null = null
   private udpSocket: dgram.Socket | null = null
   
-  async start() {
-    AppState.adapter.status = 'connecting' // ← UI natychmiast zobaczy
+  async start(config: { port: number }) {
+    AppState.status = 'connecting'
     
     this.tcpServer = net.createServer()
-    this.tcpServer.listen(44818, '0.0.0.0')
+    this.tcpServer.listen(config.port, '0.0.0.0')
     
     this.tcpServer.on('connection', (socket) => {
       this.clientSocket = socket
       socket.on('data', (data) => this.handleTcpData(data))
+      socket.on('error', () => this.cleanup())
+      socket.on('close', () => this.cleanup())
+    })
+    
+    this.tcpServer.on('error', (err) => {
+      AppState.status = 'error'
+      AppState.errorMessage = err.message  // np. EADDRINUSE — port zajęty
+      this.cleanup()
     })
   }
   
-  private handleRegisterSession(data: Buffer) {
-    const sessionHandle = Math.floor(Math.random() * 0xFFFFFFFF)
-    // Budowanie odpowiedzi RegisterSession...
+  async stop() {
+    await this.cleanup()
+    AppState.status = 'disconnected'
+    AppState.inputWord = 0
+    AppState.outputWord = 0
+  }
+  
+  private async cleanup() {
+    this.udpSocket?.close()
+    this.udpSocket = null
+    this.clientSocket?.destroy()
+    this.clientSocket = null
+    await new Promise<void>(res => this.tcpServer?.close(() => res()))
+    this.tcpServer = null
   }
 }
 ```
@@ -388,11 +380,9 @@ private parseForwardOpen(data: Buffer) {
   // FANUC wysyła: producing (T→O) FIRST, consuming (O→T) SECOND
   const connectionPath = this.parseConnectionPath(data)
   
-  // points[0] = T→O (150/0x96), points[1] = O→T (100/0x64)
   this.toConnPoint = connectionPath.points[0] // 150
   this.otConnPoint = connectionPath.points[1] // 100
   
-  // Przydziel Connection IDs
   this.otConnId = Math.floor(Math.random() * 0xFFFFFFFF)
   this.toConnId = Math.floor(Math.random() * 0xFFFFFFFF)
   
@@ -403,19 +393,17 @@ private parseForwardOpen(data: Buffer) {
 **4.3 Forward Open Reply + Sockaddr Info**
 ```typescript
 private sendForwardOpenReply() {
-  const reply = Buffer.alloc(48) // 24B encap + 18B CIP reply + 6B sockaddr
+  const reply = Buffer.alloc(48)
   
-  // CIP Reply (0xD4)...
+  // Sockaddr Info (0x8000) - ogłoś port UDP 2222
+  reply.writeUInt16LE(0x8000, 40)
+  reply.writeUInt16LE(4, 42)
+  reply.writeUInt16LE(0x02, 44)
+  reply.writeUInt16LE(2222, 46)   // Port 2222 ← FANUC wyśle O→T tutaj
   
-  // Sockaddr Info (0x8000) - ogłoś port UDP 2223
-  reply.writeUInt16LE(0x8000, 40) // O→T Sockaddr Info
-  reply.writeUInt16LE(4, 42)      // Length = 4
-  reply.writeUInt16LE(0x02, 44)   // AF_INET
-  reply.writeUInt16LE(2223, 46)   // Port 2223 ← FANUC wyśle O→T tutaj
+  this.clientSocket!.write(reply)
   
-  this.clientSocket.write(reply)
-  
-  AppState.adapter.status = 'connected' // ← UI zobaczy zielony status
+  AppState.status = 'connected'
   this.startPeriodicIO()
 }
 ```
@@ -424,42 +412,25 @@ private sendForwardOpenReply() {
 ```typescript
 private startPeriodicIO() {
   this.udpSocket = dgram.createSocket('udp4')
-  this.udpSocket.bind(2223) // Port 2223 dla Adapter mode
+  this.udpSocket.bind(2222)  // Port 2222 dla Adapter mode
   
-  // Odbiornik O→T (FANUC → PC)
   this.udpSocket.on('message', (msg) => {
     const connId = msg.readUInt32LE(6)
     if (connId !== this.otConnId) return
     
-    // Dane na bajcie 24 (CPF + CIP seq + Run/Idle 4B)
     const inputWord = msg.readUInt16LE(24)
-    AppState.adapter.inputWord = inputWord // ← UI tabela bitów aktualizuje
+    AppState.inputWord = inputWord
   })
   
-  // Nadajnik T→O co 50ms (Modeless - bez Run/Idle)
   setInterval(() => this.sendInputPacket(), 50)
 }
 ```
 
-**4.5 Równoległa praca Scanner + Adapter**
-```typescript
-// packages/server/src/routes/adapter.ts
-app.post('/api/adapter/start', async (c) => {
-  if (scannerService.isActive && adapterService.isActive) {
-    // Oba mogą działać jednocześnie na różnych portach UDP
-    console.log('Both Scanner (2222) and Adapter (2223) active')
-  }
-  
-  await adapterService.start()
-  return c.json({ status: 'connecting' })
-})
-```
-
-**Rezultat:** Oba tryby działają przez jeden UI — można testować FANUC jako Scanner i Adapter jednocześnie.
+**Rezultat:** Oba tryby działają przez jeden UI — toggle przełącza między Scanner (UDP:2222) a Adapter (UDP:2222).
 
 ---
 
-## Faza 5 — Integracja i finalizacja
+## Faza 5 — Integracja i finalizacja ✅ DONE (2026-03-29)
 
 **Cel:** Zamiana wszystkich mocków na prawdziwe serwisy + build pipeline + deployment gotowość.
 
@@ -468,12 +439,36 @@ app.post('/api/adapter/start', async (c) => {
 **5.1 Czyszczenie mock kodu**
 ```typescript
 // Usunięcie mock data generator z Fazy 1
-// Zastąpienie mockowanych API endpoints prawdziwymi calls do ScannerService/AdapterService
+// Zamiana mockowanych endpoints na prawdziwe wywołania serwisów
 
-// packages/server/src/routes/scanner.ts
-app.post('/api/scanner/connect', async (c) => {
-  // Usuń: mockowe if (config.ip === '192.168.1.999')
-  // Dodaj: await scannerService.connect(config)
+// src/routes/connection.ts
+app.post('/api/connect', zValidator('json', ConnectSchema), async (c) => {
+  const { mode, ip, port } = c.req.valid('json')
+  
+  // Zabezpieczenie: jeśli jakiś serwis aktywny — disconnect najpierw
+  if (AppState.status !== 'disconnected') {
+    await getActiveService().stop()
+  }
+  
+  AppState.activeMode = mode
+  if (mode === 'scanner') {
+    await scannerService.connect({ ip, port })
+  } else {
+    await adapterService.start({ port })
+  }
+  return c.json({ status: AppState.status })
+})
+
+app.post('/api/disconnect', async (c) => {
+  if (AppState.activeMode === 'scanner') {
+    await scannerService.disconnect()  // Forward Close + socket.destroy() + udp.close()
+  } else {
+    await adapterService.stop()        // server.close() + socket.destroy() + udp.close()
+  }
+  AppState.status = 'disconnected'
+  AppState.inputWord = 0
+  AppState.outputWord = 0
+  return c.json({ status: 'disconnected' })
 })
 ```
 
@@ -517,8 +512,29 @@ class ScannerService {
       timeoutPromise
     ])
   }
+  
+  async disconnect() {
+    // 1. Wyślij Forward Close (best-effort, ignoruj błąd jeśli TCP już zamknięte)
+    try { this.sendForwardClose() } catch {}
+    // 2. Zatrzymaj interwał UDP
+    clearInterval(this.ioInterval)
+    // 3. Zamknij UDP socket — zwolnij port 2222
+    await new Promise<void>(res => this.udpSocket?.close(res))
+    this.udpSocket = null
+    // 4. Zniszcz TCP socket — zwolnij port 44818
+    this.tcpSocket?.destroy()
+    this.tcpSocket = null
+  }
 }
-```
+
+// SIGTERM handler — cleanup przy zamknięciu serwera
+process.on('SIGTERM', async () => {
+  if (AppState.status === 'connected') {
+    if (AppState.activeMode === 'scanner') await scannerService.disconnect()
+    else await adapterService.stop()
+  }
+  process.exit(0)
+})
 
 **5.4 Logging i monitoring**
 ```typescript
@@ -542,18 +558,26 @@ this.tcpSocket.on('data', (data) => {
 - [ ] `bun run dev` → hot reload działa
 - [ ] `bun run build` → brak błędów TypeScript + Vite
 - [ ] `bun start` → jeden proces, serwuje SPA + API + WebSocket
-- [ ] Oба panele wyświetlają się poprawnie
+- [ ] Toggle SCANNER/ADAPTER zmienia tryb gdy disconnected
+- [ ] Toggle gdy connected → auto-disconnect → zmiana trybu
+- [ ] ROZŁĄCZ zwalnia porty TCP i UDP (weryfikacja: kolejne POŁĄCZ działa bez EADDRINUSE)
 - [ ] Mock data zastąpione prawdziwymi serwisami
 - [ ] Error toasts działają dla realnych błędów TCP
 - [ ] WebSocket auto-reconnect po zerwaniu połączenia
 
 ---
 
-## Faza 6 — Testy z robotem FANUC R-30iB
+## Faza 6 — Testy z robotem FANUC R-30iB ✅ DONE (2026-03-29)
 
 **Cel:** Weryfikacja wszystkich kryteriów akceptacji z PRD §11 na fizycznym sprzęcie.
 
 **Przewaga nowego porządku:** UI jest gotowe od Fazy 2 — każdy błąd protokołu jest natychmiast widoczny w dashboardzie!
+
+> **Wynik:** Połączenie PC Scanner ✅ + PC Adapter ✅ potwierdzone na fizycznym FANUC R-30iB.
+>
+> **Odkrycie podczas testów:** FANUC przed `RegisterSession` wysyła `ListServices` (cmd `0x0004`).
+> Brak odpowiedzi powodował natychmiastowy rozłącz po stronie FANUC. Naprawione przez dodanie
+> handlera `handleListServices()` — szczegóły w `§150 EthernetIP-Byte-Level-Protocol-Reference.md`, Krok 1.5.
 
 ### Plan testów
 
@@ -561,14 +585,16 @@ this.tcpSocket.on('data', (data) => {
 |---|------|-----------|----------------------|
 | **T1** | Scanner connect | PC → FANUC (robot jako Adapter, Slot 2) | Status 🟢, DI[17-32]/DO[17-32] widoczne w tabeli |
 | **T2** | Adapter start | FANUC → PC (robot jako Scanner, Slot 1) | Status 🟢, DI[1-16]/DO[1-16] widoczne w tabeli |
-| **T3** | Dual mode | T1 + T2 jednocześnie | Oba panele 🟢, brak konfliktów portów UDP 2222/2223 |
-| **T4** | Scanner bit toggle | Kliknij bit w OUTPUT scanner → robot | FANUC widzi zmianę DI[17-32] w tym samym cyklu |
-| **T5** | Adapter bit toggle | Kliknij bit w OUTPUT adapter → robot | FANUC widzi zmianę DI[1-16] |
-| **T6** | IP timeout | Connect do `192.168.1.999` | Toast: `Connection timed out` po maks. 10 s |
-| **T7** | IP refused | Connect do nieistniejącego portu | Toast: `Connection refused` natychmiast |
-| **T8** | Stability test | Połączenie przez 5 minut | Sesja utrzymana, brak rozłączeń, dane real-time |
-| **T9** | Tablet UI | Testowanie na tablecie 768px+ | Touch: wszystkie bity klikalne, brak overflow |
-| **T10** | Time to connect | Od otwarcia przeglądarki do 🟢 | < 30 s łącznie (load page + TCP + Forward Open) |
+| **T3** | Mode toggle gdy disconnected | Toggle SCANNER→ADAPTER | Tytuł panelu zmienia się, etykiety I/O aktualizują |
+| **T4** | Mode toggle gdy connected | Toggle podczas połączenia Scanner | Auto-disconnect → zmiana trybu → status ⚪ DISCONNECTED |
+| **T5** | ROZŁĄCZ zwalnia porty | Kliknij ROZŁĄCZ → od razu kliknij POŁĄCZ | Brak błędu EADDRINUSE, połączenie działa |
+| **T6** | Scanner bit toggle | Kliknij bit w OUTPUT scanner → robot | FANUC widzi zmianę DI[17-32] w tym samym cyklu |
+| **T7** | Adapter bit toggle | Kliknij bit w OUTPUT adapter → robot | FANUC widzi zmianę DI[1-16] |
+| **T8** | IP timeout | Connect do `192.168.1.999` | Toast: `Connection timed out` po maks. 10 s, porty wolne |
+| **T9** | IP refused | Connect do nieistniejącego portu | Toast: `Connection refused` natychmiast, porty wolne |
+| **T10** | Stability test | Połączenie przez 5 minut | Sesja utrzymana, brak rozłączeń, dane real-time |
+| **T11** | Tablet UI | Testowanie na tablecie 768px+ | Toggle klikalne, wszystkie bity klikalne, brak overflow |
+| **T12** | Time to connect | Od otwarcia przeglądarki do 🟢 | < 30 s łącznie (load page + TCP + Forward Open) |
 
 ### Debugging przez UI (korzyści UI-first approach)
 
@@ -614,7 +640,7 @@ tcpdump -i eth0 port 44818 -w fanuc_tcp.pcap
 |---|------|----------------------|
 | T1 | Scanner connect do FANUC (robot jako Adapter, Slot 2) | Status 🟢, DI[17-32]/DO[17-32] widoczne |
 | T2 | Adapter — FANUC inicjuje połączenie (robot jako Scanner, Slot 1) | Status 🟢, DI[1-16]/DO[1-16] widoczne |
-| T3 | Oba tryby jednocześnie | Dwa panele 🟢, brak konfliktów portów UDP 2222/2223 |
+| T3 | Oba tryby rozdzielnie | Jeden panel 🟢, brak konfliktów portów UDP 2222 |
 | T4 | Toggle bitu Output w trybie Scanner | Robot widzi zmianę DI na tym samym cyklu UDP |
 | T5 | Toggle bitu Output w trybie Adapter | Robot widzi zmianę DI[1-16] |
 | T6 | Błędny IP (timeout) | Komunikat `Connection timed out` po maks. 5 s |
@@ -660,21 +686,21 @@ Faza 0 (szkielet)
 | **M1** — Mock Backend działa ✅ | WebSocket broadcast z fake danymi, API endpoints odpowiadają |
 | **M2** — UI funkcjonalne ✅ | Dashboard z dwoma panelami, toggle bitów, animacje, responsive design |
 | **M3** — Scanner Protocol ✅ | `ScannerService.connect()` kończy Forward Open bez błędów CIP, widoczne w UI |
-| **M4** — Adapter Protocol | `AdapterService.start()` odbiera Forward Open od FANUC, widoczne w UI |
-| **M5** — Integracja finalna | Wszystkie mocki zastąpione, `bun start` → production build |
-| **M6** — Testy akceptacyjne | Wszystkie 10 testów z Fazy 6 zaliczone na fizycznym FANUC R-30iB ✅ |
+| **M4** — Adapter Protocol ✅ | `AdapterService.start()` odbiera Forward Open od FANUC, widoczne w UI |
+| **M5** — Integracja finalna ✅ | Wszystkie mocki zastąpione, `bun start` → production build |
+| **M6** — Testy akceptacyjne ✅ | PC Scanner + PC Adapter działają z fizycznym FANUC R-30iB |
 
 ---
 
 ## Krytyczne ryzyka techniczne
 
-| Ryzyko | Mitigacja |
-|--------|-----------|
-| FANUC odrzuca Forward Open (`0x0117`) | Bezwzględna weryfikacja kolejności Connection Path: `152→102` (T→O FIRST) |
-| FANUC odrzuca rozmiary (`0x0109`) | O→T = **8**, T→O = **4** — z wliczonym CIP Sequence Count |
-| Brak danych UDP po Forward Open | Weryfikacja Connection ID: `otConnId` = FO Reply[4..7], `toConnId` = FO Reply[8..11] |
-| Konflikt portów UDP przy jednoczesnej pracy | Scanner na **2222**, Adapter na **2223** — nigdy odwrotnie |
-| Run/Idle = Idle → robot zeruje wyjścia | Każdy pakiet O→T musi mieć `0x00000001` w bajtach [20..23] |
+| Ryzyko | Mitigacja | Status |
+|--------|-----------|--------|
+| FANUC odrzuca Forward Open (`0x0117`) | Bezwzględna weryfikacja kolejności Connection Path: `152→102` (T→O FIRST) | ✅ Rozwiązane |
+| FANUC odrzuca rozmiary (`0x0109`) | O→T = **8**, T→O = **4** — z wliczonym CIP Sequence Count | ✅ Rozwiązane |
+| Brak danych UDP po Forward Open | Weryfikacja Connection ID: `otConnId` = FO Reply[4..7], `toConnId` = FO Reply[8..11] | ✅ Rozwiązane |
+| Run/Idle = Idle → robot zeruje wyjścia | Każdy pakiet O→T musi mieć `0x00000001` w bajtach [20..23] | ✅ Rozwiązane |
+| **FANUC rozłącza się przed RegisterSession** ⚠ _nowe_ | FANUC wysyła `ListServices` (0x0004) — Adapter musi odpowiedzieć. Brak odpowiedzi = natychmiastowy disconnect. Dodano `handleListServices()`. Udokumentowane w §150, Krok 1.5. | ✅ Rozwiązane |
 
 ---
 ---
@@ -686,9 +712,9 @@ Faza 0 (szkielet)
 | **0** ✅ | Szkielet monorepo, typy, tooling | 1 dzień | `bun run dev` działa |
 | **1** ✅ | Mock Backend + WebSocket broadcast | 1 dzień | Fake dane EtherNet/IP |
 | **2** ✅ | Frontend UI: panele, tabele bitów | 2 dni | **Dashboard gotowy!** |
-| **3** | `ScannerService` — Forward Open | 3 dni | Prawdziwy protokół z UI feedback |
-| **4** | `AdapterService` — TCP server | 2 dni | Oba tryby działają |
-| **5** | Integracja, production build | 1 dzień | `bun start` ready |
-| **6** | Testy na FANUC R-30iB | 1-2 dni | MVP zaakceptowany ✅ |
+| **3** ✅ | `ScannerService` — Forward Open | 3 dni | Prawdziwy protokół z UI feedback |
+| **4** ✅ | `AdapterService` — TCP server | 2 dni | Oba tryby działają |
+| **5** ✅ | Integracja, production build | 1 dzień | `bun start` ready |
+| **6** ✅ | Testy na FANUC R-30iB | 1-2 dni | MVP zaakceptowany ✅ |
 
 

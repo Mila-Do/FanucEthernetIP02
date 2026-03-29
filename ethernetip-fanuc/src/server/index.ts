@@ -97,13 +97,5 @@ const server = Bun.serve({
 // Start 100ms broadcast loop
 startBroadcast();
 
-// Mock data generator for Adapter mode — Phase 4 will replace this
-// Scanner mock removed: real ScannerService now updates appState.scanner.inputWord via UDP
-setInterval(() => {
-  if (appState.adapter.status === 'connected') {
-    appState.adapter.inputWord = Math.floor(Math.random() * 65536);
-  }
-}, 100);
-
 console.log(`EtherNet/IP FANUC Connector running on http://0.0.0.0:${server.port}`);
 console.log(`WebSocket: ws://0.0.0.0:${server.port}/ws`);

@@ -180,34 +180,33 @@ Status badge:        text-xs    font-semibold   tracking-widest  uppercase
 ### Desktop (≥ 1024px)
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  ◉ FANUC EtherNet/IP          [●] SCANNER  [●] ADAPTER  │  ← Top bar (h-14)
-├──────────────────────────┬──────────────────────────────┤
-│                          │                              │
-│   Panel: SCANNER         │   Panel: ADAPTER             │  ← Dwie kolumny
-│   (ConnectionPanel)      │   (ConnectionPanel)          │     gap-6, p-6
-│                          │                              │
-│   ┌──────────────────┐   │   ┌──────────────────────┐   │
-│   │  Config Form     │   │   │  Config Form          │   │
-│   │  Status Badge    │   │   │  Status Badge         │   │
-│   │  Connect Btn     │   │   │  Start Btn            │   │
-│   └──────────────────┘   │   └──────────────────────────┘
-│                          │                              │
-│   INPUT  (16 bitów)      │   INPUT  (16 bitów)          │
-│   ┌────────────────────┐ │   ┌────────────────────────┐ │
-│   │  IoWordView        │ │   │  IoWordView             │ │
-│   └────────────────────┘ │   └────────────────────────┘ │
-│                          │                              │
-│   OUTPUT (16 bitów)      │   OUTPUT (16 bitów)          │
-│   ┌────────────────────┐ │   ┌────────────────────────┐ │
-│   │  IoWordView (edit) │ │   │  IoWordView (edit)      │ │
-│   └────────────────────┘ │   └────────────────────────┘ │
-└──────────────────────────┴──────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  ◉ FANUC EtherNet/IP      [ SCANNER ●──────○ ADAPTER ]       │  ← Top bar (h-14)
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│   Panel: FANUC SCANNER (lub ADAPTER — zależy od toggle)      │  ← Jeden panel, pełna szerokość
+│                                                              │
+│   ┌──────────────────────────────────────────────────────┐   │
+│   │  Config Form (IP, Port)     ● Status Badge           │   │
+│   │                                                      │   │
+│   │  [ POŁĄCZ ]   lub   [ ROZŁĄCZ ]                      │   │
+│   └──────────────────────────────────────────────────────┘   │
+│                                                              │
+│   INPUT  (z robota do PC)                                    │
+│   ┌──────────────────────────────────────────────────────┐   │
+│   │  IoWordView (readonly)                               │   │
+│   └──────────────────────────────────────────────────────┘   │
+│                                                              │
+│   OUTPUT (z PC do robota)                                    │
+│   ┌──────────────────────────────────────────────────────┐   │
+│   │  IoWordView (editable)                               │   │
+│   └──────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### Tablet (768px – 1023px)
 
-Jedna kolumna, panele stackują się pionowo. Przyciski mają `min-h-[48px]` dla wygody dotykowej.
+Identyczny layout — panel zajmuje pełną szerokość. Przyciski mają `min-h-[48px]` dla wygody dotykowej.
 
 ---
 
@@ -215,18 +214,28 @@ Jedna kolumna, panele stackują się pionowo. Przyciski mają `min-h-[48px]` dla
 
 ### `ConnectionPanel`
 
-Karta (`Card` z shadcn) z następującymi sekcjami:
+Karta (`Card` z shadcn) z następującymi sekcjami. Jest **jeden** panel — tytuł i etykiety I/O zmieniają się automatycznie ze zmianą trybu.
 
 ```
-┌─────────────────────────────────────────┐
-│  [Wifi]  FANUC SCANNER         🟢 CONNECTED  │   ← header: ikona + tytuł + badge
-├─────────────────────────────────────────┤
-│  Robot IP   [192.168.1.10        ]      │   ← Input (font-mono)
-│  Port        [44818              ]      │
-├─────────────────────────────────────────┤
-│         [ POŁĄCZ ]  [ ROZŁĄCZ ]         │   ← przyciski
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│  [Wifi]  FANUC SCANNER (lub ADAPTER)    🟢 CONNECTED  │   ← header: ikona + tryb + badge
+├──────────────────────────────────────────────────────┤
+│  Robot IP   [192.168.1.10              ]             │   ← Input (font-mono, zablokowane gdy connected)
+│  Port        [44818                   ]             │
+├──────────────────────────────────────────────────────┤
+│    [ POŁĄCZ ]          [ ROZŁĄCZ ]                   │   ← ROZŁĄCZ widoczny gdy ≠ disconnected
+└──────────────────────────────────────────────────────┘
 ```
+
+**ROZŁĄCZ — zachowanie:**
+- Zawsze widoczny gdy status ≠ `disconnected`
+- Wywołuje `POST /api/disconnect` → backend zamyka TCP socket + UDP socket → status → `disconnected`
+- Disabled podczas wykonywania requestu (loading spinner)
+
+**Toggle trybu w Top Barze — zachowanie:**
+- Gdy disconnected → natychmiastowa zmiana
+- Gdy connected → pokazuje toast: `"Rozłączanie przed zmianą trybu..."` → auto-disconnect → zmiana trybu
+- Gdy connecting → toggle zablokowany (disabled)
 
 **Style karty:**
 ```css
@@ -324,20 +333,32 @@ Animacja wejścia: Framer Motion `x: [-8, 0]` + `opacity: [0, 1]` w 200ms.
 ### Top Bar
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  ◉  FANUC EtherNet/IP Dashboard      ●Scanner  ●Adapter     │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│  ◉  FANUC EtherNet/IP Dashboard    [ SCANNER ●──────○ ADAPTER ]    │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
+**Toggle trybu — styl:**
 ```css
-background: rgba(13,27,42,0.9);
-backdrop-filter: blur(12px);
-border-bottom: 1px solid #1e3a52;
-height: 56px;
-position: sticky; top: 0; z-index: 50;
+/* Kontener przełącznika */
+background: var(--bg-surface);        /* #0d1b2a */
+border: 1px solid var(--bg-border);   /* #1e3a52 */
+border-radius: 999px;
+padding: 3px;
+
+/* Aktywna pozycja (pill) */
+background: linear-gradient(135deg, #0369a1, #0ea5e9);
+border-radius: 999px;
+transition: transform 250ms cubic-bezier(0.4, 0, 0.2, 1);
+
+/* Etykiety */
+font-size: 11px;
+font-weight: 700;
+letter-spacing: 0.08em;
+text-transform: uppercase;
 ```
 
-Logo `◉` to animowana ikona `Radio` (Lucide) — powoli obraca się gdy przynajmniej jedno połączenie jest aktywne.
+Logo `◉` to animowana ikona `Radio` (Lucide) — powoli obraca się gdy połączenie jest aktywne (`status === "connected"`).
 
 ---
 

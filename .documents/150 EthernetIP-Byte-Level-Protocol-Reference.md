@@ -83,6 +83,82 @@ Scanner nawiązuje połączenie TCP z Adapterem na porcie **44818** (standardowy
 
 ---
 
+## Krok 1.5 — ListServices (TCP, cmd `0x0004`) ⚠ Wymagane w Trybie A
+
+> **Odkrycie empiryczne** — brakujący element nieudokumentowany w typowych implementacjach.
+
+### Problem
+
+FANUC R-30iB jako Scanner **przed** wysłaniem `RegisterSession` wysyła `ListServices` (cmd `0x0004`).
+Jest to standardowe EtherNet/IP discovery — Scanner sprawdza, czy docelowe urządzenie jest
+prawidłowym węzłem EIP i jakie usługi obsługuje.
+
+Jeśli Adapter **nie odpowie** na `ListServices`, FANUC natychmiast rozłącza TCP i **nigdy nie wysyła
+`RegisterSession`**. Efekt widoczny w logach:
+
+```
+TCP rx: cmd=0x0004 — ignored
+FANUC TCP disconnected
+```
+
+### Żądanie (Scanner → Adapter): 24 B
+
+Sam nagłówek enkapsulacji, payload length = 0.
+
+```
+Offset  Hex    Pole
+──────  ─────  ──────────────────────────────
+ 0– 1   04 00  Command = 0x0004 (ListServices)
+ 2– 3   00 00  Length = 0
+ 4–23   00 …   Session=0, Status=0, Context=?, Options=0
+```
+
+### Odpowiedź (Adapter → Scanner)
+
+Encapsulation header (24B) + payload 26B = **50 B łącznie**.
+
+```
+Offset  Hex          Pole
+──────  ───────────  ──────────────────────────────────────────
+ 0– 1   04 00        Command = 0x0004
+ 2– 3   1A 00        Length = 26
+ 4– 7   00 00 00 00  Session Handle = 0
+ 8–11   00 00 00 00  Status = 0
+12–19   (echo)       Sender Context — skopiowany z żądania
+20–23   00 00 00 00  Options = 0
+────── Payload (26 B) ─────────────────────────────────────────
+24–25   01 00        Item Count = 1
+26–27   00 01        TypeId = 0x0100 (Communications)
+28–29   14 00        Length = 20
+30–31   01 00        Protocol Version = 1
+32–33   20 01        Capability Flags = 0x0120
+34–49   43 6F 6D …   Service Name = "Communications\0\0" (16B, null-padded)
+```
+
+### Capability Flags (16 bit)
+
+| Bit | Wartość | Znaczenie                                 |
+| --- | ------- | ----------------------------------------- |
+| 5   | `0x0020` | Obsługuje CIP transport Class 0/1 (UDP)  |
+| 8   | `0x0100` | Obsługuje UCMM (Class 3, TCP)            |
+
+Dla PC Adapter obsługującego implicit I/O i Forward Open: **`0x0120`** (oba bity).
+
+### Kolejność kroków — Tryb A (pełna sekwencja)
+
+```
+FANUC → PC   TCP connect (port 44818)
+FANUC → PC   ListServices (0x0004)       ← WYMAGANE, często pomijane w dokumentacji
+PC    → FANUC ListServices reply
+FANUC → PC   RegisterSession (0x0065)
+PC    → FANUC RegisterSession reply (Session Handle)
+FANUC → PC   Forward Open (0x006F / CIP 0x54)
+PC    → FANUC Forward Open Reply (Connection IDs + Sockaddr Info 0x8000)
+             ← od tej chwili: cykliczna wymiana UDP co RPI
+```
+
+---
+
 ## Krok 2 — RegisterSession (TCP)
 
 Pierwszy pakiet po nawiązaniu TCP. Scanner prosi o sesję, Adapter przydziela Session Handle.

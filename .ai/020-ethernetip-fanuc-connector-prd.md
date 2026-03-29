@@ -41,6 +41,8 @@ Dane przesyłane są po **1 słowie = 16 bitów (2 bajty)** w obu kierunkach, w 
 | **Fanuc Adapter** | Wejście do PC (od robota) | DI 17–32 | `FANUC_ADPT_IN[17..32]` | Robot → PC |
 | **Fanuc Adapter** | Wyjście z PC (do robota) | DO 17–32 | `FANUC_ADPT_OUT[17..32]` | PC → Robot |
 
+Etykiety wierszy I/O zmieniają się automatycznie wraz ze zmianą trybu.
+
 ### 3.3 Reprezentacja w buforze
 
 ```typescript
@@ -52,23 +54,27 @@ type IOWord = {
 
 type ConnectionState = {
   mode: "scanner" | "adapter";
-  input: IOWord;    // dane przychodzące z robota
-  output: IOWord;   // dane wysyłane do robota
+  status: ConnectionStatus;
+  config: { ip: string; port: number } | null;
+  errorMessage: string | null;
+  inputWord: number;   // UINT16 — dane przychodzące z robota
+  outputWord: number;  // UINT16 — dane wysyłane do robota
 };
 ```
 
 ---
 
-## 4. Tryby Działania — Jednoczesny Scanner + Adapter
+## 4. Tryb Działania — Scanner XOR Adapter
 
 ### 4.1 Decyzja
 
-**Oba tryby mogą być aktywne jednocześnie** — na potrzeby testów i developmentu.
+**Tylko jeden tryb może być aktywny w danej chwili.** Przełącznik trybu (`SCANNER` / `ADAPTER`) jest widoczny zawsze — w top barze aplikacji.
 
-Każdy tryb to niezależna instancja:
-- oddzielny stan połączenia
-- oddzielne bufory I/O
-- oddzielny kanał WebSocket (lub jeden broadcast z rozróżnieniem `mode` w payloadzie)
+Reguły:
+- Zmiana trybu gdy status = `connected` → automatyczny disconnect (Forward Close + zamknięcie TCP/UDP) → zmiana trybu
+- Zmiana trybu gdy status = `connecting` → anulowanie próby połączenia → zmiana trybu
+- Zmiana trybu gdy status = `disconnected` / `error` → natychmiastowa
+- **Przycisk ROZŁĄCZ** jest zawsze widoczny gdy status ≠ `disconnected` — gwarantuje zwolnienie portów
 
 ### 4.2 Diagram architektury
 
@@ -76,68 +82,76 @@ Każdy tryb to niezależna instancja:
 Przeglądarka (UI)
     │
     │  WebSocket ws://localhost:3000/ws
-    │  (payload: { mode: "scanner"|"adapter", input: word, output: word })
+    │  (payload: { mode: "scanner"|"adapter", status, input, output })
     │
     ▼
 Backend Server (port 3000)
     ├── API Router
-    │     ├── scanner.connect(config)
-    │     ├── scanner.disconnect()
-    │     ├── scanner.writeOutput(word)
-    │     ├── adapter.start(config)
-    │     ├── adapter.stop()
-    │     └── adapter.writeOutput(word)
+    │     ├── POST /api/connect    { mode, ip, port }
+    │     ├── POST /api/disconnect
+    │     └── POST /api/write      { word }
     │
-    ├── ScannerService
-    │     └── połączenie TCP 44818 → Fanuc Adapter
-    │           I/O UDP 2222 ↔ Fanuc
+    ├── ScannerService (aktywny gdy mode = "scanner")
+    │     └── TCP→44818, UDP:2222
+    │           Forward Open → I/O loop → Forward Close + socket.destroy()
     │
-    └── AdapterService
-          └── nasłuch TCP 44818 ← Fanuc Scanner
-                I/O UDP 2222 ↔ Fanuc
+    └── AdapterService (aktywny gdy mode = "adapter")
+          └── TCP listen:44818, UDP:2222
+                Forward Open Reply → I/O loop → server.close() + socket.destroy()
 ```
+
+### 4.3 Zarządzanie portami — wymagania bezwzględne
+
+| Zdarzenie | Akcja backendu |
+|-----------|----------------|
+| `disconnect` (przycisk) | Forward Close → `tcpSocket.destroy()` → `udpSocket.close()` |
+| Zmiana trybu gdy connected | Jak wyżej + zmiana `activeMode` |
+| Błąd TCP/UDP | Cleanup socket + status = `error` + porty wolne |
+| Timeout połączenia | Cleanup + status = `error` |
+| Zamknięcie serwera (SIGTERM) | Cleanup wszystkich socketów |
 
 ---
 
 ## 5. Funkcjonalności MVP
 
-### F1 — Panel wyboru trybu
+### F1 — Przełącznik trybu (Mode Toggle)
 
-- Dwa niezależne panele: **Fanuc Scanner** i **Fanuc Adapter**
-- Każdy panel można uruchomić osobno lub jednocześnie
-- Stan wizualny każdego panelu: `DISCONNECTED` / `CONNECTING` / `CONNECTED` / `ERROR`
+- Przełącznik w top barze aplikacji: `[ SCANNER ●──────○ ADAPTER ]`
+- Zmiana trybu gdy połączony → automatyczny disconnect przed zmianą
+- Tryb zablokowany podczas łączenia (`connecting`) — przycisk toggle nieaktywny
+- Stan trybu persystowany w URL params (opcjonalnie) lub w pamięci
 
-### F2 — Formularz konfiguracji (per tryb)
+### F2 — Formularz konfiguracji (wspólny)
 
 | Pole | Typ | Domyślna wartość | Walidacja |
 |------|-----|-----------------|-----------|
-| Robot IP | `string` | `192.168.1.10` | valid IPv4 |
+| Robot IP | `string` | `192.168.1.181` | valid IPv4 |
 | Port | `number` | `44818` | 1–65535 |
-| Input size | `number` | `2` (1 word) | fixed na MVP |
-| Output size | `number` | `2` (1 word) | fixed na MVP |
 
-Pola Input/Output size są **zablokowane na 2 bajty (1 word)** w MVP — konfiguracja słów jest stała zgodnie z mapowaniem sekcji 4.
+Pola są **zablokowane gdy status ≠ `disconnected`** — nie można zmieniać IP w trakcie połączenia.
 
-### F3 — Connect / Disconnect (per tryb)
+### F3 — Connect / Disconnect
 
-- Przycisk `POŁĄCZ` → wywołuje `scanner.connect()` lub `adapter.start()`
-- Wskaźnik stanu z kolorowym badge: 🟢 Connected / 🔴 Error / ⚪ Disconnected
+- Przycisk `POŁĄCZ` → wywołuje `POST /api/connect` z aktywnym trybem
+- Przycisk `ROZŁĄCZ` → wywołuje `POST /api/disconnect` → **gwarantuje zamknięcie TCP i UDP**
+- `ROZŁĄCZ` widoczny zawsze gdy status ≠ `disconnected`
+- Wskaźnik stanu z kolorowym badge: 🟢 Connected / 🟡 Connecting / 🔴 Error / ⚪ Disconnected
 - Komunikat błędu czytelny w UI: `timeout`, `connection refused`, `wrong IP`
 - **Reconnect: manualny** — użytkownik klika POŁĄCZ ponownie
 
-### F4 — Podgląd danych I/O (16 bitów per tryb)
+### F4 — Podgląd danych I/O (16 bitów)
 
 - Wyświetlenie 1 słowa wejściowego (16 bitów od robota)
 - Wyświetlenie 1 słowa wyjściowego (16 bitów do robota)
 - Odświeżanie co **100 ms** przez WebSocket push
 - Widok: tabela 16 kolumn (Bit 15 → Bit 0) z wartością `0` / `1`
 - Nagłówki kolumn: `B15` … `B0`
-- Etykiety wierszy zgodne z nazwami z sekcji 4.2 (np. `FANUC_SCAN_IN[1..16]`)
+- Etykiety wierszy zmieniają się ze zmianą trybu (np. `FANUC_SCAN_IN[1..16]` vs `FANUC_ADPT_IN[17..32]`)
 
 ### F5 — Edycja wyjść (Output Word)
 
 - Kliknięcie pojedynczego bitu w wierszu Output **toggleuje** jego wartość (0 → 1 lub 1 → 0)
-- Zmiana natychmiast wysyłana do serwera przez `writeOutput(word)`
+- Zmiana natychmiast wysyłana do serwera przez `POST /api/write`
 - Serwer aktualizuje bufor i wysyła słowo do robota przy najbliższym cyklu I/O
 - Wizualne potwierdzenie: bit zmienia kolor po odebraniu przez serwer
 
@@ -149,27 +163,40 @@ Pola Input/Output size są **zablokowane na 2 bajty (1 word)** w MVP — konfigu
 Otwórz http://localhost:3000
          │
          ▼
-┌─────────────────────────────────────────────────────┐
-│  Panel: FANUC SCANNER          Panel: FANUC ADAPTER │
-│                                                     │
-│  IP: [192.168.1.10]            IP: [192.168.1.10]  │
-│  Port: [44818]                 Port: [44818]        │
-│                                                     │
-│  [ POŁĄCZ ]   ⚪ DISCONNECTED  [ START ]  ⚪ IDLE   │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  ◉ FANUC EtherNet/IP    [ SCANNER ●──────○ ADAPTER ]     │  ← Top bar
+└──────────────────────────────────────────────────────────┘
          │
-         ▼ (po kliknięciu POŁĄCZ w Scanner)
-┌─────────────────────────────────────────────────────┐
-│  🟢 SCANNER CONNECTED          ⚪ ADAPTER IDLE      │
-│                                                     │
-│  FANUC_SCAN_IN  [1..16]:                           │
+         ▼
+┌──────────────────────────────────────────────────────────┐
+│  Tryb: FANUC SCANNER                   ⚪ DISCONNECTED   │
+│                                                          │
+│  Robot IP:  [192.168.1.10        ]                       │
+│  Port:      [44818               ]                       │
+│                                                          │
+│  [ POŁĄCZ ]                                              │
+└──────────────────────────────────────────────────────────┘
+         │
+         ▼ (po kliknięciu POŁĄCZ)
+┌──────────────────────────────────────────────────────────┐
+│  Tryb: FANUC SCANNER                   🟢 CONNECTED      │
+│                                                          │
+│  Robot IP:  [192.168.1.10  ] ← zablokowane              │
+│  Port:      [44818         ] ← zablokowane              │
+│                                                          │
+│  [ ROZŁĄCZ ]  ← zawsze widoczny gdy nie disconnected     │
+│                                                          │
+│  FANUC_SCAN_IN [1..16]:                                  │
 │  B15 B14 B13 B12 B11 B10 B9 B8 B7 B6 B5 B4 B3 B2 B1 B0 │
-│   0   0   0   0   0   1  0  0  1  0  0  0  1  0  0  1  │
-│                                                     │
-│  FANUC_SCAN_OUT [1..16]:  ← klikalne                │
-│  B15 B14 ... B1 B0                                  │
-│   0   0  ...  0  [1] ← toggle                       │
-└─────────────────────────────────────────────────────┘
+│   0   0   0   0   0   1  0  0  1  0  0  0  1  0  0  1   │
+│                                                          │
+│  FANUC_SCAN_OUT [1..16]:  ← klikalne                     │
+│  B15 B14 ... B1 B0                                       │
+│   0   0  ...  0  [1] ← toggle                           │
+└──────────────────────────────────────────────────────────┘
+         │
+         ▼ (przełączenie toggle SCANNER → ADAPTER gdy connected)
+         Auto-disconnect → zamknięcie portów → zmiana trybu → DISCONNECTED
 ```
 
 ---
@@ -177,15 +204,10 @@ Otwórz http://localhost:3000
 ## 7. API Specification
 
 ```
-// scanner
-scanner.connect({ ip: string, port: number }) → { status: ConnectionStatus }
-scanner.disconnect() → void
-scanner.writeOutput({ word: number }) → void  // number 0–65535
-
-// adapter
-adapter.start({ port: number }) → { status: ConnectionStatus }
-adapter.stop() → void
-adapter.writeOutput({ word: number }) → void
+// Unified connection API
+POST /api/connect    { mode: "scanner"|"adapter", ip: string, port: number }
+POST /api/disconnect
+POST /api/write      { word: number }  // 0–65535
 
 // WebSocket broadcast payload
 {
@@ -202,26 +224,23 @@ adapter.writeOutput({ word: number }) → void
 
 ## 8. Stan aplikacji (in-memory, brak bazy danych)
 
-```
-AppState {
-  scanner: {
-    config: { ip, port } | null
-    status: ConnectionStatus
-    errorMessage: string | null
-    inputWord: number    // 0–65535
-    outputWord: number   // 0–65535
-  }
-  adapter: {
-    config: { port } | null
-    status: ConnectionStatus
-    errorMessage: string | null
-    inputWord: number
-    outputWord: number
-  }
+```typescript
+type AppState = {
+  activeMode: "scanner" | "adapter"
+  status: ConnectionStatus           // wspólny dla aktywnego trybu
+  config: { ip: string; port: number } | null
+  errorMessage: string | null
+  inputWord: number                  // UINT16 — dane z robota
+  outputWord: number                 // UINT16 — dane do robota
 }
 ```
 
 Stan zeruje się przy restarcie serwera — bez persystencji w MVP.
+
+**Niezmienniki stanu:**
+- Tylko jeden tryb może być `connected` lub `connecting` w danej chwili
+- `inputWord` / `outputWord` resetowane do `0` przy każdym disconnect
+- `config` zachowywany po rozłączeniu — ułatwia ponowne połączenie
 
 ---
 
@@ -255,11 +274,14 @@ Stan zeruje się przy restarcie serwera — bez persystencji w MVP.
 
 ## 11. Kryteria Akceptacji MVP
 
+- [ ] Przełącznik trybu (Scanner/Adapter) zmienia tryb gdy disconnected
+- [ ] Przełącznik trybu gdy connected → auto-disconnect → zmiana trybu → disconnected
 - [ ] Scanner łączy się z Fanuc (robot jako Adapter) i wyświetla 16 bitów I/O w czasie rzeczywistym
 - [ ] Adapter startuje i odbiera połączenie od Fanuc (robot jako Scanner) — 16 bitów I/O
-- [ ] Oba tryby aktywne jednocześnie bez błędów
 - [ ] Toggle pojedynczego bitu w Output → robot widzi zmianę
+- [ ] Przycisk ROZŁĄCZ zamyka TCP i UDP, zwalnia porty, status → disconnected
 - [ ] Błąd połączenia (zły IP, timeout) wyświetlony czytelnie w UI
+- [ ] Po błędzie: porty są wolne (można natychmiast ponownie kliknąć POŁĄCZ)
 - [ ] Działa na tablecie (touch) w tej samej sieci co robot
 - [ ] Zero instalacji po stronie klienta poza przeglądarką
 

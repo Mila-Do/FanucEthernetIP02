@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { appState } from '../index.ts';
 import { StartAdapterSchema, WriteOutputSchema } from '../types.ts';
+import { adapterService } from '../services/PCAdapterService.ts';
 
 export const adapterRoutes = new Hono();
 
@@ -13,17 +14,34 @@ adapterRoutes.post('/start', zValidator('json', StartAdapterSchema), async (c) =
   }
 
   appState.adapter.config = config;
-  appState.adapter.errorMessage = null;
-
-  // Mock: simulate waiting for FANUC Scanner to connect (1.5s)
   appState.adapter.status = 'connecting';
-  setTimeout(() => {
-    if (appState.adapter.status === 'connecting') {
-      appState.adapter.status = 'connected';
-    }
-  }, 1500);
+  appState.adapter.errorMessage = null;
+  appState.adapter.inputWord = 0;
+  appState.adapter.outputWord = 0;
 
-  return c.json({ status: appState.adapter.status });
+  // Fire-and-forget — UI receives status updates via WebSocket broadcast.
+  // start() resolves when TCP server is listening (still 'connecting').
+  // onConnected fires after FANUC completes Forward Open handshake ('connected').
+  adapterService
+    .start(config, {
+      onConnected: () => {
+        appState.adapter.status = 'connected';
+      },
+      onInputWord: (word) => {
+        appState.adapter.inputWord = word;
+      },
+      onError: (msg) => {
+        appState.adapter.status = 'error';
+        appState.adapter.errorMessage = msg;
+        adapterService.stop();
+      },
+    })
+    .catch((err: Error) => {
+      appState.adapter.status = 'error';
+      appState.adapter.errorMessage = err.message;
+    });
+
+  return c.json({ status: 'connecting' });
 });
 
 adapterRoutes.post('/stop', async (c) => {
@@ -31,7 +49,8 @@ adapterRoutes.post('/stop', async (c) => {
     return c.json({ error: 'Adapter is not running' }, 409);
   }
 
-  // AdapterService.stop() will be wired here in Phase 4
+  await adapterService.stop();
+
   appState.adapter.status = 'disconnected';
   appState.adapter.config = null;
   appState.adapter.errorMessage = null;
@@ -39,6 +58,10 @@ adapterRoutes.post('/stop', async (c) => {
   appState.adapter.outputWord = 0;
 
   return c.json({ status: 'disconnected' });
+});
+
+adapterRoutes.get('/diag', (c) => {
+  return c.json(adapterService.getDiag());
 });
 
 adapterRoutes.post('/write', zValidator('json', WriteOutputSchema), async (c) => {
@@ -49,8 +72,7 @@ adapterRoutes.post('/write', zValidator('json', WriteOutputSchema), async (c) =>
   }
 
   appState.adapter.outputWord = word;
-
-  // AdapterService.setOutputWord() will be wired here in Phase 4
+  adapterService.setOutputWord(word);
 
   return c.json({ outputWord: appState.adapter.outputWord });
 });
