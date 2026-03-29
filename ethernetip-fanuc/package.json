@@ -1,0 +1,40 @@
+{
+  "name": "ethernetip-fanuc",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev":       "bun dev.ts",
+    "build":     "bun run vite build",
+    "start":     "bun src/server/index.ts",
+    "typecheck": "bun run tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.7.5",
+    "@hono/zod-validator": "^0.4.3",
+    "zod": "^3.24.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^4.5.6",
+    "framer-motion": "^11.18.2",
+    "lucide-react": "^0.487.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^2.6.0",
+    "sonner": "^1.7.4",
+    "@radix-ui/react-tooltip": "^1.1.8",
+    "@radix-ui/react-separator": "^1.1.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/bun": "latest",
+    "@types/react": "^18.3.20",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.8.3",
+    "vite": "^5.4.21"
+  }
+}

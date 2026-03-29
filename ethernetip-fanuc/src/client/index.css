@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Connection states */
+  --connected-dim:    #064e3b;
+  --connected-mid:    #059669;
+  --connected-bright: #10b981;
+  --connected-glow:   #34d399;
+
+  --connecting-dim:    #451a03;
+  --connecting-mid:    #b45309;
+  --connecting-bright: #f59e0b;
+  --connecting-glow:   #fbbf24;
+
+  --error-dim:    #450a0a;
+  --error-mid:    #b91c1c;
+  --error-bright: #ef4444;
+  --error-glow:   #f87171;
+
+  --idle-dim:    #0d1b2a;
+  --idle-mid:    #1e3a52;
+  --idle-bright: #4a7a9b;
+
+  /* Bit cells */
+  --bit-on-bg:      #0c2d4a;
+  --bit-on-border:  #0369a1;
+  --bit-on-text:    #38bdf8;
+  --bit-on-glow:    #7dd3fc;
+
+  --bit-off-bg:     #0d1b2a;
+  --bit-off-border: #1e3a52;
+  --bit-off-text:   #2a4a60;
+
+  --bit-input-on:   #0f4c2a;
+  --bit-input-text: #6ee7b7;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter Variable', 'Inter', system-ui, sans-serif;
+  background: linear-gradient(160deg, #070d14 0%, #0a1628 100%);
+  min-height: 100vh;
+  color: #e8f4fd;
+}
