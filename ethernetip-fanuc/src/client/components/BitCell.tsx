@@ -3,21 +3,22 @@ import { motion } from 'framer-motion';
 type Props = {
   value: boolean;
   bitIndex: number;
+  displayLabel: string;
   type: 'input' | 'output';
   onToggle?: () => void;
 };
 
-export const BitCell = ({ value, bitIndex, type, onToggle }: Props) => {
+export const BitCell = ({ value, bitIndex, displayLabel, type, onToggle }: Props) => {
   const label = value ? '1' : '0';
 
   if (type === 'input') {
     return (
       <div
-        title={`B${bitIndex} = ${label}`}
+        title={`${displayLabel} = ${label}`}
         className="flex items-center justify-center h-8 rounded-sm text-xs font-mono select-none transition-all duration-150"
         style={
           value
-            ? { background: '#0f4c2a', border: '1px solid #059669', color: '#6ee7b7', fontWeight: 600 }
+            ? { background: '#0c2d4a', border: '1px solid #0369a1', color: '#38bdf8', fontWeight: 600 }
             : { background: '#0d1b2a', border: '1px solid #1e3a52', color: '#2a4a60' }
         }
       >
@@ -29,8 +30,8 @@ export const BitCell = ({ value, bitIndex, type, onToggle }: Props) => {
   return (
     <motion.button
       type="button"
-      title={`B${bitIndex} = ${label} (tap to toggle)`}
-      aria-label={`Bit ${bitIndex}: ${label}`}
+      title={`${displayLabel} = ${label} (tap to toggle)`}
+      aria-label={`${displayLabel}: ${label}`}
       aria-pressed={value}
       whileTap={{ scale: 0.85 }}
       whileHover={{ scale: 1.08 }}
@@ -40,11 +41,11 @@ export const BitCell = ({ value, bitIndex, type, onToggle }: Props) => {
       style={
         value
           ? {
-              background: '#0c2d4a',
-              border: '1px solid #0369a1',
-              color: '#38bdf8',
+              background: '#0f4c2a',
+              border: '1px solid #059669',
+              color: '#6ee7b7',
               fontWeight: 700,
-              boxShadow: '0 0 8px 1px rgba(56,189,248,0.3)',
+              boxShadow: '0 0 8px 1px rgba(52,211,153,0.25)',
             }
           : { background: '#0d1b2a', border: '1px solid #1e3a52', color: '#2a4a60' }
       }

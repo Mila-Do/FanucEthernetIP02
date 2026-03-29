@@ -74,13 +74,13 @@ export default function App() {
           {/* Scanner mini indicator */}
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full" style={{ background: statusColor(scannerStatus) }} />
-            <span className="hidden sm:block text-xs font-mono text-steel-400 tracking-wider">SCANNER</span>
+            <span className="hidden sm:block text-xs font-mono text-steel-400 tracking-wider">PC·SCANNER</span>
           </div>
 
           {/* Adapter mini indicator */}
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full" style={{ background: statusColor(adapterStatus) }} />
-            <span className="hidden sm:block text-xs font-mono text-steel-400 tracking-wider">ADAPTER</span>
+            <span className="hidden sm:block text-xs font-mono text-steel-400 tracking-wider">PC·ADAPTER</span>
           </div>
         </div>
       </header>

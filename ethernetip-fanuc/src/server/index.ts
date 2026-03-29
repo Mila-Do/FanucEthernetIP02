@@ -97,12 +97,9 @@ const server = Bun.serve({
 // Start 100ms broadcast loop
 startBroadcast();
 
-// Mock data generator — Phase 1 only, replaced in Phase 3/4 by real services
-// Simulates incoming I/O data from FANUC robot when connected
+// Mock data generator for Adapter mode — Phase 4 will replace this
+// Scanner mock removed: real ScannerService now updates appState.scanner.inputWord via UDP
 setInterval(() => {
-  if (appState.scanner.status === 'connected') {
-    appState.scanner.inputWord = Math.floor(Math.random() * 65536);
-  }
   if (appState.adapter.status === 'connected') {
     appState.adapter.inputWord = Math.floor(Math.random() * 65536);
   }

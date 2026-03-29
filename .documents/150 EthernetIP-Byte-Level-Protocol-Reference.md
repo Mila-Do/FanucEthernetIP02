@@ -542,23 +542,21 @@ for (let i = 0; i < 16; i++) bits.push(!!((w >> i) & 1));
 | O→T ma Run/Idle?         | Tak                                 | Tak                              |
 | T→O ma Run/Idle?         | Nie (Modeless)                      | Nie (Modeless)                   |
 | Port TCP                 | 44818 (PC nasłuchuje)               | 44818 (FANUC nasłuchuje)         |
-| Port UDP                 | **2223**                            | **2222**                         |
+| Port UDP                 | **2222**                            | **2222**                         |
 | Sygnały DI/DO            | DI[1–16] / DO[1–16]                 | DI[17–32] / DO[17–32]            |
 | HTTP bridge              | :3001                               | :3002                            |
 
-### Uwaga: rozdzielenie portów UDP przy jednoczesnej pracy obu trybów
+### Uwaga: port UDP przy jednoczesnej pracy obu trybów
 
-Jeśli oba skrypty mają działać na tym samym PC jednocześnie (do tego samego robota,
-na różnych slotach), **nie mogą współdzielić portu UDP**. Rozdzielenie:
+Oba tryby używają standardowego portu EtherNet/IP UDP **2222**. Jeśli oba skrypty mają działać
+na tym samym PC jednocześnie (do tego samego robota, na różnych slotach), port UDP będzie
+współdzielony — upewnij się, że implementacja pozwala na multipleksowanie (np. jeden socket UDP
+nasłuchujący na 2222, demultipleksujący ruch po adresie źródłowym lub ID połączenia).
 
-| Skrypt | Port UDP | Uzasadnienie |
-|--------|----------|-------------|
-| `eip-adapter.js` (Tryb A) | **2223** | Adapter jawnie komunikuje swój port w **Sockaddr Info (0x8000)** w Forward Open Reply — FANUC Scanner przeczyta tę wartość i wyśle O→T na wskazany port |
-| `eip-scanner.js` (Tryb B) | **2222** | FANUC Adapter domyślnie wysyła T→O na standardowy port 2222 — Scanner nie ma mechanizmu negocjacji portu odbioru |
-
-Port 2222 zostawiamy Scannerowi, bo FANUC jako Adapter wysyła T→O na standardowy port EtherNet/IP
-i nie ma jawnego sposobu na poinformowanie go o innym porcie. Adapter natomiast ma wbudowany
-mechanizm (Sockaddr Info) do ogłoszenia dowolnego portu.
+| Skrypt | Port UDP | Uwaga |
+|--------|----------|-------|
+| `eip-adapter.js` (Tryb A) | **2222** | Standardowy port EtherNet/IP — FANUC Scanner wyśle O→T na wskazany port w **Sockaddr Info (0x8000)** z Forward Open Reply |
+| `eip-scanner.js` (Tryb B) | **2222** | FANUC Adapter domyślnie wysyła T→O na standardowy port 2222 |
 
 ---
 

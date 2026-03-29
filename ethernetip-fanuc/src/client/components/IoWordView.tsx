@@ -5,14 +5,16 @@ type Props = {
   label: string;
   word: number;
   type: 'input' | 'output';
+  bitOffset: number;
   onBitToggle?: (bitIndex: number) => void;
 };
 
-export const IoWordView = ({ label, word, type, onBitToggle }: Props) => {
+export const IoWordView = ({ label, word, type, bitOffset, onBitToggle }: Props) => {
   // wordToBits: [0] = LSB (B0), [15] = MSB (B15)
   const bits = wordToBits(word);
   // Display MSB-first: B15 on the left, B0 on the right
   const displayBits = [...bits].reverse();
+  const prefix = type === 'input' ? 'DI' : 'DO';
 
   return (
     <div className="space-y-1">
@@ -27,11 +29,11 @@ export const IoWordView = ({ label, word, type, onBitToggle }: Props) => {
         </span>
       </div>
 
-      {/* Bit index headers: 15 … 0 */}
+      {/* Bit index headers: (15+offset) … offset */}
       <div className="grid grid-cols-16 gap-0.5">
         {displayBits.map((_, i) => (
           <div key={i} className="text-center text-[9px] font-mono" style={{ color: '#2a4a60' }}>
-            {15 - i}
+            {15 - i + bitOffset}
           </div>
         ))}
       </div>
@@ -45,6 +47,7 @@ export const IoWordView = ({ label, word, type, onBitToggle }: Props) => {
               key={bitIdx}
               value={bit}
               bitIndex={bitIdx}
+              displayLabel={`${prefix}${bitIdx + bitOffset}`}
               type={type}
               onToggle={type === 'output' ? () => onBitToggle?.(bitIdx) : undefined}
             />
