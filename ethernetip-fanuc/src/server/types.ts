@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+// ── Protocol constants ───────────────────────────────────────────────────────
+
+/** EtherNet/IP standard TCP port — fixed by FANUC, not configurable */
+export const EIP_PORT = 44818;
+
 // ── Connection status ────────────────────────────────────────────────────────
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';

@@ -2,7 +2,7 @@
 
 > **Wersja:** 1.2  
 > **Data:** 2026-03-29  
-> **Status:** In Progress — Faza 1 ✅  
+> **Status:** In Progress — Faza 2 ✅  
 > **Powiązane dokumenty:** `010-mvp.md`, `020-prd.md`, `030-tech-stack.md`, `050-protocol-reference.md`
 
 ---
@@ -17,7 +17,7 @@ Faza 0: Szkielet projektu ✅ DONE (2026-03-29)
     ├── Faza 1: Mock Backend + WebSocket ✅ DONE (2026-03-29)
     │                    │
     │                    ▼
-    ├── Faza 2: Frontend UI + Store (z mockami) ← dashboard gotowy!
+    ├── Faza 2: Frontend UI + Store (z mockami) ✅ DONE (2026-03-29) ← dashboard gotowy!
     │                    │
     │                    ▼
     ├── Faza 3: ScannerService (prawdziwy protokół) ← UI gotowe do testów!
@@ -658,7 +658,7 @@ Faza 0 (szkielet)
 |-----------|-------------------|
 | **M0** — Środowisko gotowe ✅ | `bun run dev` uruchamia Vite + Hono bez błędów |
 | **M1** — Mock Backend działa ✅ | WebSocket broadcast z fake danymi, API endpoints odpowiadają |
-| **M2** — UI funkcjonalne | Dashboard z dwoma panelami, toggle bitów, animacje, responsive design |
+| **M2** — UI funkcjonalne ✅ | Dashboard z dwoma panelami, toggle bitów, animacje, responsive design |
 | **M3** — Scanner Protocol | `ScannerService.connect()` kończy Forward Open bez błędów CIP, widoczne w UI |
 | **M4** — Adapter Protocol | `AdapterService.start()` odbiera Forward Open od FANUC, widoczne w UI |
 | **M5** — Integracja finalna | Wszystkie mocki zastąpione, `bun start` → production build |
@@ -685,7 +685,7 @@ Faza 0 (szkielet)
 |---|---|---|---|
 | **0** ✅ | Szkielet monorepo, typy, tooling | 1 dzień | `bun run dev` działa |
 | **1** ✅ | Mock Backend + WebSocket broadcast | 1 dzień | Fake dane EtherNet/IP |
-| **2** | Frontend UI: panele, tabele bitów | 2 dni | **Dashboard gotowy!** |
+| **2** ✅ | Frontend UI: panele, tabele bitów | 2 dni | **Dashboard gotowy!** |
 | **3** | `ScannerService` — Forward Open | 3 dni | Prawdziwy protokół z UI feedback |
 | **4** | `AdapterService` — TCP server | 2 dni | Oba tryby działają |
 | **5** | Integracja, production build | 1 dzień | `bun start` ready |
